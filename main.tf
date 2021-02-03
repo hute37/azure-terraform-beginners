@@ -9,10 +9,19 @@
 ##############################################################################
 # * Shared infrastructure resources
 
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 2.12"
+    }
+  }
+}
+
 # The latest version of the Azure provider breaks backward compatibility.
 # TODO: Update this code to use the latest provider.
 provider "azurerm" {
-  version = "=1.44.0"
+  features {}
 }
 
 # First we'll create a resource group. In Azure every resource belongs to a 
@@ -20,8 +29,8 @@ provider "azurerm" {
 # You can find a complete list of Azure resources supported by Terraform here:
 # https://www.terraform.io/docs/providers/azurerm/
 resource "azurerm_resource_group" "tf_azure_guide" {
-  name     = "${var.resource_group}"
-  location = "${var.location}"
+  name     = var.resource_group
+  location = var.location
 }
 
 # The next resource is a Virtual Network. We can dynamically place it into the
@@ -31,10 +40,10 @@ resource "azurerm_resource_group" "tf_azure_guide" {
 # works visually, run `terraform graph` and copy the output into the online
 # GraphViz tool: http://www.webgraphviz.com/
 resource "azurerm_virtual_network" "vnet" {
-  name                = "${var.virtual_network_name}"
-  location            = "${azurerm_resource_group.tf_azure_guide.location}"
-  address_space       = ["${var.address_space}"]
-  resource_group_name = "${azurerm_resource_group.tf_azure_guide.name}"
+  name                = var.virtual_network_name
+  location            = azurerm_resource_group.tf_azure_guide.location
+  address_space       = [var.address_space]
+  resource_group_name = azurerm_resource_group.tf_azure_guide.name
 }
 
 # Next we'll build a subnet to run our VMs in. These variables can be defined 
@@ -44,9 +53,9 @@ resource "azurerm_virtual_network" "vnet" {
 # making a copy of the terraform.tfvars.example file.
 resource "azurerm_subnet" "subnet" {
   name                 = "${var.prefix}subnet"
-  virtual_network_name = "${azurerm_virtual_network.vnet.name}"
-  resource_group_name  = "${azurerm_resource_group.tf_azure_guide.name}"
-  address_prefix       = "${var.subnet_prefix}"
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  resource_group_name  = azurerm_resource_group.tf_azure_guide.name
+  address_prefix       = var.subnet_prefix
 }
 
 ##############################################################################
@@ -61,8 +70,8 @@ resource "azurerm_subnet" "subnet" {
 # Security group to allow inbound access on port 80 (http) and 22 (ssh)
 resource "azurerm_network_security_group" "tf-guide-sg" {
   name                = "${var.prefix}-sg"
-  location            = "${var.location}"
-  resource_group_name = "${azurerm_resource_group.tf_azure_guide.name}"
+  location            = var.location
+  resource_group_name = azurerm_resource_group.tf_azure_guide.name
 
   security_rule {
     name                       = "HTTP"
@@ -72,7 +81,7 @@ resource "azurerm_network_security_group" "tf-guide-sg" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "80"
-    source_address_prefix      = "${var.source_network}"
+    source_address_prefix      = var.source_network
     destination_address_prefix = "*"
   }
 
@@ -84,7 +93,7 @@ resource "azurerm_network_security_group" "tf-guide-sg" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "22"
-    source_address_prefix      = "${var.source_network}"
+    source_address_prefix      = var.source_network
     destination_address_prefix = "*"
   }
 }
@@ -93,15 +102,15 @@ resource "azurerm_network_security_group" "tf-guide-sg" {
 # resource. Terraform will let you know if you're missing a dependency.
 resource "azurerm_network_interface" "tf-guide-nic" {
   name                      = "${var.prefix}tf-guide-nic"
-  location                  = "${var.location}"
-  resource_group_name       = "${azurerm_resource_group.tf_azure_guide.name}"
-  network_security_group_id = "${azurerm_network_security_group.tf-guide-sg.id}"
+  location                  = var.location
+  resource_group_name       = azurerm_resource_group.tf_azure_guide.name
+  network_security_group_id = azurerm_network_security_group.tf-guide-sg.id
 
   ip_configuration {
     name                          = "${var.prefix}ipconfig"
-    subnet_id                     = "${azurerm_subnet.subnet.id}"
+    subnet_id                     = azurerm_subnet.subnet.id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = "${azurerm_public_ip.tf-guide-pip.id}"
+    public_ip_address_id          = azurerm_public_ip.tf-guide-pip.id
   }
 }
 
@@ -110,10 +119,10 @@ resource "azurerm_network_interface" "tf-guide-nic" {
 # demo environments like this one.
 resource "azurerm_public_ip" "tf-guide-pip" {
   name                         = "${var.prefix}-ip"
-  location                     = "${var.location}"
-  resource_group_name          = "${azurerm_resource_group.tf_azure_guide.name}"
+  location                     = var.location
+  resource_group_name          = azurerm_resource_group.tf_azure_guide.name
   public_ip_address_allocation = "Dynamic"
-  domain_name_label            = "${var.hostname}"
+  domain_name_label            = var.hostname
 }
 
 # And finally we build our virtual machine. This is a standard Ubuntu instance.
@@ -122,18 +131,18 @@ resource "azurerm_public_ip" "tf-guide-pip" {
 # provisioners including Bash, Powershell and Chef.
 resource "azurerm_virtual_machine" "site" {
   name                = "${var.hostname}-site"
-  location            = "${var.location}"
-  resource_group_name = "${azurerm_resource_group.tf_azure_guide.name}"
-  vm_size             = "${var.vm_size}"
+  location            = var.location
+  resource_group_name = azurerm_resource_group.tf_azure_guide.name
+  vm_size             = var.vm_size
 
-  network_interface_ids         = ["${azurerm_network_interface.tf-guide-nic.id}"]
+  network_interface_ids         = [azurerm_network_interface.tf-guide-nic.id]
   delete_os_disk_on_termination = "true"
 
   storage_image_reference {
-    publisher = "${var.image_publisher}"
-    offer     = "${var.image_offer}"
-    sku       = "${var.image_sku}"
-    version   = "${var.image_version}"
+    publisher = var.image_publisher
+    offer     = var.image_offer
+    sku       = var.image_sku
+    version   = var.image_version
   }
 
   storage_os_disk {
@@ -144,9 +153,9 @@ resource "azurerm_virtual_machine" "site" {
   }
 
   os_profile {
-    computer_name  = "${var.hostname}"
-    admin_username = "${var.admin_username}"
-    admin_password = "${var.admin_password}"
+    computer_name  = var.hostname
+    admin_username = var.admin_username
+    admin_password = var.admin_password
   }
 
   os_profile_linux_config {
@@ -160,9 +169,9 @@ resource "azurerm_virtual_machine" "site" {
 
     connection {
       type     = "ssh"
-      user     = "${var.admin_username}"
-      password = "${var.admin_password}"
-      host     = "${azurerm_public_ip.tf-guide-pip.fqdn}"
+      user     = var.admin_username
+      password = var.admin_password
+      host     = azurerm_public_ip.tf-guide-pip.fqdn
     }
   }
 
@@ -175,9 +184,9 @@ resource "azurerm_virtual_machine" "site" {
 
     connection {
       type     = "ssh"
-      user     = "${var.admin_username}"
-      password = "${var.admin_password}"
-      host     = "${azurerm_public_ip.tf-guide-pip.fqdn}"
+      user     = var.admin_username
+      password = var.admin_password
+      host     = azurerm_public_ip.tf-guide-pip.fqdn
     }
   }
 }
